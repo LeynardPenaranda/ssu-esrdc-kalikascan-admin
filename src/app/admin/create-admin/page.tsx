@@ -4,8 +4,8 @@
 import AdminsTable, {
   type AdminRole,
   type AdminRow,
-} from "@/src/components/AdminsTable";
-import RegisterAdminModal from "@/src/components/RegisterModal";
+} from "@/src/components/tables/AdminsTable";
+import RegisterAdminModal from "@/src/components/modals/RegisterModal";
 
 import { DEFAULT_ADMIN_AVATAR } from "@/src/constant";
 import { useToast } from "@/src/hooks/useToast";

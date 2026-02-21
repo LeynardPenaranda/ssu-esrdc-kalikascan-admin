@@ -71,7 +71,7 @@ export default function AdminSidebar() {
               <div className="text-sm font-bold text-app-headerText">
                 KalikaScan
               </div>
-              <div className="text-xs text-app-text">Admin Menu</div>
+              <div className="text-xs text-app-text">Admin Panel</div>
             </div>
           </div>
         </div>

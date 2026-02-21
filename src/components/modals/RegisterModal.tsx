@@ -1,9 +1,11 @@
-// src/components/RegisterAdminModal.tsx
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Copy, Check, X, Eye, EyeClosed } from "lucide-react";
-import CopyLine from "./ui/CopyLine";
+import CopyLine from "../ui/CopyLine";
+import { Dropdown } from "antd";
+import type { MenuProps } from "antd";
+import { DownOutlined } from "@ant-design/icons";
 
 export type AdminRole = "admin" | "superadmin";
 
@@ -21,6 +23,10 @@ async function copyToClipboard(text: string) {
   el.select();
   document.execCommand("copy");
   document.body.removeChild(el);
+}
+
+function roleLabel(role: AdminRole) {
+  return role === "superadmin" ? "Super Admin" : "Admin";
 }
 
 export default function RegisterAdminModal({
@@ -64,6 +70,7 @@ export default function RegisterAdminModal({
   onSubmit: (e: React.FormEvent) => void;
 }) {
   const [isEyeOpen, setIsEyeOpen] = useState(false);
+
   const copyBlock = useMemo(() => {
     return [
       `email: ${email || "(empty)"}`,
@@ -82,6 +89,15 @@ export default function RegisterAdminModal({
   if (!open) return null;
 
   const locked = loading || disableClose;
+
+  const roleItems: MenuProps["items"] = [
+    { key: "admin", label: "Admin" },
+    { key: "superadmin", label: "Super Admin" },
+  ];
+
+  const onRoleClick: MenuProps["onClick"] = ({ key }) => {
+    onChangeRole(key as AdminRole);
+  };
 
   return (
     <div
@@ -173,20 +189,28 @@ export default function RegisterAdminModal({
               </div>
             </div>
 
-            {/* Role */}
+            {/* Role (AntD Dropdown) */}
             {isSuperAdmin && (
               <div className="space-y-1">
                 <label className="text-sm font-medium text-app-headerText">
                   Role
                 </label>
-                <select
-                  className="w-full rounded-lg border border-app-inputBorder px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-app-button focus:border-app-button transition bg-white cursor-pointer"
-                  value={role}
-                  onChange={(e) => onChangeRole(e.target.value as AdminRole)}
+
+                <Dropdown
+                  menu={{ items: roleItems, onClick: onRoleClick }}
+                  trigger={["click"]}
+                  placement="bottomLeft"
                 >
-                  <option value="admin">Admin</option>
-                  <option value="superadmin">Super Admin</option>
-                </select>
+                  <button
+                    type="button"
+                    disabled={locked}
+                    className="w-full rounded-lg border border-app-inputBorder px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-app-button focus:border-app-button transition bg-white cursor-pointer inline-flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <span className="text-gray-900">{roleLabel(role)}</span>
+                    <DownOutlined className="text-[10px] text-gray-500" />
+                  </button>
+                </Dropdown>
+
                 <p className="text-[11px] text-app-text">
                   Only Super Admins can assign roles.
                 </p>

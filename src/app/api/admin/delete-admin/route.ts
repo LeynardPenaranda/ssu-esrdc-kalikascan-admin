@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { adminAuth } from "@/src/lib/firebase/admin";
+import { adminAuth, adminDb } from "@/src/lib/firebase/admin";
 
 export async function POST(req: Request) {
   try {
@@ -47,7 +47,11 @@ export async function POST(req: Request) {
       );
     }
 
-    await adminAuth.deleteUser(uid);
+    // delete auth user + firestore admin doc (same uid doc id)
+    const adminDocRef = adminDb.collection("admins").doc(uid);
+
+    // run deletes (no need transaction; these are different systems)
+    await Promise.allSettled([adminAuth.deleteUser(uid), adminDocRef.delete()]);
 
     return NextResponse.json({ ok: true, uid });
   } catch (e: any) {
