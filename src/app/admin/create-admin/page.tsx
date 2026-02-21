@@ -1,4 +1,3 @@
-// app/(admin)/create-admin/page.tsx
 "use client";
 
 import AdminsTable, {
@@ -9,9 +8,33 @@ import RegisterAdminModal from "@/src/components/modals/RegisterModal";
 
 import { DEFAULT_ADMIN_AVATAR } from "@/src/constant";
 import { useToast } from "@/src/hooks/useToast";
-import { auth } from "@/src/lib/firebase/client";
+import { auth, db } from "@/src/lib/firebase/client";
 import { RefreshCw } from "lucide-react";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { onAuthStateChanged } from "firebase/auth";
+import {
+  collection,
+  onSnapshot,
+  orderBy,
+  query,
+  type Timestamp,
+} from "firebase/firestore";
+
+function tsToIso(ts: any): string | null {
+  if (!ts) return null;
+  try {
+    // Firestore Timestamp
+    if (typeof ts.toDate === "function")
+      return (ts as Timestamp).toDate().toISOString();
+    // Date
+    if (ts instanceof Date) return ts.toISOString();
+    // already string
+    if (typeof ts === "string") return ts;
+    return String(ts);
+  } catch {
+    return null;
+  }
+}
 
 export default function CreateAdminPage() {
   const { showToast } = useToast();
@@ -35,6 +58,9 @@ export default function CreateAdminPage() {
   // ✅ for "You" badge
   const [myUid, setMyUid] = useState<string | null>(null);
 
+  // ✅ keep unsubscribe ref for Firestore listener
+  const unsubAdminsRef = useRef<null | (() => void)>(null);
+
   function resetCreateForm() {
     setEmail("");
     setPassword("");
@@ -51,17 +77,63 @@ export default function CreateAdminPage() {
     setOpenCreate(false);
   }
 
-  async function resolveMyRoleAndUid() {
-    const current = auth.currentUser;
-    if (!current) return;
+  async function resolveMyRoleAndUid(currentUid: string) {
+    setMyUid(currentUid);
 
-    setMyUid(current.uid);
-
-    const token = await current.getIdTokenResult(true);
-    setIsSuperAdmin(Boolean(token.claims.superadmin));
+    // superadmin claim (your existing logic)
+    const token = await auth.currentUser?.getIdTokenResult(true);
+    setIsSuperAdmin(Boolean(token?.claims?.superadmin));
     setRole("admin");
   }
 
+  // ✅ LIVE subscribe to /admins so photoURL updates instantly
+  function subscribeAdmins() {
+    setLoadingAdmins(true);
+
+    // cleanup previous listener if any
+    if (unsubAdminsRef.current) {
+      unsubAdminsRef.current();
+      unsubAdminsRef.current = null;
+    }
+
+    const q = query(collection(db, "admins"), orderBy("createdAt", "desc"));
+
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const rows: AdminRow[] = snap.docs.map((d) => {
+          const data = d.data() as any;
+
+          return {
+            uid: data.uid ?? d.id,
+            email: data.email ?? null,
+            displayName: data.displayName ?? null,
+            photoURL: data.photoURL ?? null,
+            disabled: Boolean(data.disabled),
+            role: (data.role ?? "admin") as AdminRole,
+            createdAt: tsToIso(data.createdAt),
+            lastSignIn: tsToIso(data.lastSignIn),
+          };
+        });
+
+        setAdmins(rows);
+        setLoadingAdmins(false);
+      },
+      (err) => {
+        console.error("Admins subscription error:", err);
+        setLoadingAdmins(false);
+        showToast({
+          type: "danger",
+          message: "Failed to load admins",
+          description: err?.message ?? "Something went wrong",
+        });
+      },
+    );
+
+    unsubAdminsRef.current = unsub;
+  }
+
+  // keep your API fetch (manual refresh button can still use it)
   async function fetchAdmins() {
     try {
       setLoadingAdmins(true);
@@ -92,8 +164,26 @@ export default function CreateAdminPage() {
   }
 
   useEffect(() => {
-    resolveMyRoleAndUid();
-    fetchAdmins();
+    // ✅ wait for auth to be ready
+    const unsubAuth = onAuthStateChanged(auth, async (user) => {
+      if (!user) return;
+
+      await resolveMyRoleAndUid(user.uid);
+
+      // ✅ start realtime updates (this fixes old avatar issue)
+      subscribeAdmins();
+
+      // optional: also do initial API fetch once (not required)
+      // await fetchAdmins();
+    });
+
+    return () => {
+      unsubAuth();
+      if (unsubAdminsRef.current) {
+        unsubAdminsRef.current();
+        unsubAdminsRef.current = null;
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -128,16 +218,17 @@ export default function CreateAdminPage() {
       showToast({
         type: "success",
         message: "Admin created successfully",
-        description: `${
-          displayName || email
-        } can now log in using the temporary password.`,
+        description: `${displayName || email} can now log in using the temporary password.`,
       });
 
       closeCreateModal();
       resetCreateForm();
-      fetchAdmins();
+
+      // ✅ no need to fetch, onSnapshot will update automatically
+      // but keeping this won't hurt:
+      // fetchAdmins();
     } catch (e: any) {
-      let message = "Failed to create admin";
+      let msg = "Failed to create admin";
       let description = e?.message ?? "Something went wrong";
 
       if (description.includes("email-already-exists"))
@@ -147,7 +238,7 @@ export default function CreateAdminPage() {
       if (description.includes("weak-password"))
         description = "Password should be at least 6 characters.";
 
-      showToast({ type: "danger", message, description });
+      showToast({ type: "danger", message: msg, description });
     } finally {
       setLoadingCreate(false);
     }
@@ -192,7 +283,8 @@ export default function CreateAdminPage() {
         description: admin.email || admin.uid,
       });
 
-      fetchAdmins();
+      // ✅ realtime listener will reflect updates; no fetch needed
+      // fetchAdmins();
     } catch (e: any) {
       showToast({
         type: "danger",
@@ -229,7 +321,8 @@ export default function CreateAdminPage() {
         description: admin.email || admin.uid,
       });
 
-      fetchAdmins();
+      // ✅ realtime listener will reflect deletion; no fetch needed
+      // fetchAdmins();
     } catch (e: any) {
       showToast({
         type: "danger",
@@ -264,7 +357,7 @@ export default function CreateAdminPage() {
 
             <button
               type="button"
-              onClick={fetchAdmins}
+              onClick={fetchAdmins} // manual refresh still works
               disabled={loadingAdmins}
               className="rounded-lg border border-gray-200 p-2 hover:bg-gray-50 active:scale-[0.98] transition disabled:opacity-50 disabled:cursor-not-allowed"
               aria-label="Refresh admins"

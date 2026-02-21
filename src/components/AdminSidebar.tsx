@@ -14,6 +14,7 @@ import {
   LogOut,
   ShieldUser,
   Sprout,
+  SquareUser,
 } from "lucide-react";
 
 type NavItem = {
@@ -41,7 +42,7 @@ const NAV: NavItem[] = [
     href: "/admin/create-admin",
     icon: ShieldUser,
   },
-  { label: "Settings", href: "/admin/settings", icon: Settings },
+  { label: "Profile", href: "/admin/profile", icon: SquareUser },
 ];
 
 export default function AdminSidebar() {

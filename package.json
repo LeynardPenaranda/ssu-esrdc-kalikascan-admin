@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "antd": "^6.3.0",
+    "cloudinary": "^2.9.0",
     "firebase": "^12.9.0",
     "firebase-admin": "^13.6.1",
     "lucide-react": "^0.574.0",

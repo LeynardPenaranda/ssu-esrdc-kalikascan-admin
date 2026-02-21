@@ -5,24 +5,30 @@ import {
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
 } from "firebase/auth";
-import { auth } from "@/src/lib/firebase/client";
+import { auth, db } from "@/src/lib/firebase/client";
 import { useToast } from "../hooks/useToast";
-import { Eye, EyeClosed } from "lucide-react";
+import { Eye, EyeClosed, Loader2 } from "lucide-react";
 import Image from "next/image";
+import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
+
 type Props = {
-  onSuccess?: () => void; // optional callback if you want
+  onSuccess?: () => void;
 };
 
 export default function AdminLoginCard({ onSuccess }: Props) {
   const { showToast } = useToast();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
   const [isOpenEye, setIsOpenEye] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
   const [loading, setLoading] = useState(false);
   const [isSendingForgotPass, setIsSendingForgotPass] = useState(false);
 
-  const canResetPassword = email.trim().length > 0 && !isSendingForgotPass;
+  const canResetPassword =
+    email.trim().length > 0 && !isSendingForgotPass && !loading;
 
   async function onForgotPassword() {
     const trimmedEmail = email.trim();
@@ -79,13 +85,15 @@ export default function AdminLoginCard({ onSuccess }: Props) {
 
   async function onLogin(e: React.FormEvent) {
     e.preventDefault();
+
+    if (loading) return; // ✅ prevent double submit
+
     setErr(null);
     setLoading(true);
 
     try {
       const cred = await signInWithEmailAndPassword(auth, email, password);
 
-      // Check admin claim
       const token = await cred.user.getIdTokenResult(true);
       const isAdmin = Boolean(token.claims.admin);
 
@@ -94,6 +102,11 @@ export default function AdminLoginCard({ onSuccess }: Props) {
         setErr("Access denied. This account is not an admin.");
         return;
       }
+
+      // ✅ update lastSignIn in Firestore
+      await updateDoc(doc(db, "admins", cred.user.uid), {
+        lastSignIn: serverTimestamp(),
+      });
 
       onSuccess?.();
     } catch (error: any) {
@@ -104,8 +117,7 @@ export default function AdminLoginCard({ onSuccess }: Props) {
       switch (error?.code) {
         case "auth/user-not-found":
           errorMessage = "No account found with this email.";
-          descriptionMessage =
-            "We couldn’t find an account with this email. Please double-check your email.";
+          descriptionMessage = "We couldn’t find an account with this email.";
           break;
         case "auth/wrong-password":
         case "auth/invalid-credential":
@@ -149,10 +161,11 @@ export default function AdminLoginCard({ onSuccess }: Props) {
       </div>
 
       <form onSubmit={onLogin} className="space-y-4">
-        <div className="space-y-1 ">
+        <div className="space-y-1">
           <label className="text-sm font-medium text-gray-700">Email</label>
           <input
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-app-button focus:border-app-button transition"
+            disabled={loading}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-app-button focus:border-app-button transition disabled:opacity-60"
             placeholder="admin@email.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -163,25 +176,30 @@ export default function AdminLoginCard({ onSuccess }: Props) {
         <div className="space-y-1 relative">
           <label className="text-sm font-medium text-gray-700">Password</label>
           <input
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-app-button focus:border-app-button pr-10 transition"
+            disabled={loading}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-app-button focus:border-app-button pr-10 transition disabled:opacity-60"
             placeholder="••••••••"
             type={isOpenEye ? "text" : "password"}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="current-password"
           />
-          {!isOpenEye ? (
-            <Eye
-              className="absolute top-8 right-2 cursor-pointer"
-              onClick={() => setIsOpenEye(!isOpenEye)}
-            />
-          ) : (
-            <EyeClosed
-              className="absolute top-8 right-2 cursor-pointer"
-              onClick={() => setIsOpenEye(!isOpenEye)}
-            />
-          )}
+
+          <button
+            type="button"
+            disabled={loading}
+            className="absolute top-8 right-2 p-1 rounded-md hover:bg-gray-100 disabled:opacity-50"
+            onClick={() => setIsOpenEye((v) => !v)}
+            aria-label={isOpenEye ? "Hide password" : "Show password"}
+          >
+            {isOpenEye ? (
+              <EyeClosed className="h-5 w-5" />
+            ) : (
+              <Eye className="h-5 w-5" />
+            )}
+          </button>
         </div>
+
         <button
           type="button"
           onClick={onForgotPassword}
@@ -200,9 +218,16 @@ export default function AdminLoginCard({ onSuccess }: Props) {
         <button
           disabled={loading}
           type="submit"
-          className="w-full rounded-lg bg-app-button text-white py-2.5 text-sm font-medium hover:bg-app-buttonHover active:scale-[0.99] transition disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full rounded-lg bg-app-button text-white py-2.5 text-sm font-medium hover:bg-app-buttonHover active:scale-[0.99] transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
         >
-          {loading ? "Logging in..." : "Login"}
+          {loading ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Logging in...
+            </>
+          ) : (
+            "Login"
+          )}
         </button>
       </form>
 
