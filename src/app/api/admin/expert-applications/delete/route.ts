@@ -3,7 +3,8 @@ import { adminAuth, adminDb } from "@/src/lib/firebase/admin";
 
 type Body = {
   applicationId: string;
-  uid: string;
+  // uid is no longer needed if you truly only delete the global doc
+  // uid?: string;
 };
 
 export async function POST(req: Request) {
@@ -19,7 +20,7 @@ export async function POST(req: Request) {
 
     const decoded = await adminAuth.verifyIdToken(idToken);
 
-    //  only admins
+    // only admins
     if (!decoded.admin) {
       return NextResponse.json(
         { error: "Forbidden (not admin)" },
@@ -29,17 +30,11 @@ export async function POST(req: Request) {
 
     const body = (await req.json()) as Body;
 
-    if (!body?.applicationId || !body?.uid) {
+    if (!body?.applicationId) {
       return NextResponse.json({ error: "Missing fields" }, { status: 400 });
     }
 
     const appRef = adminDb
-      .collection("expert_applications")
-      .doc(body.applicationId);
-
-    const userMirrorRef = adminDb
-      .collection("users")
-      .doc(body.uid)
       .collection("expert_applications")
       .doc(body.applicationId);
 
@@ -48,15 +43,15 @@ export async function POST(req: Request) {
       if (!snap.exists) throw new Error("Application not found");
 
       const data = snap.data() as any;
-      const status = (data?.status ?? "pending") as string;
+      const status = String(data?.status ?? "pending");
 
-      //  Only allow delete if already reviewed
+      // Only allow delete if already reviewed
       if (status !== "approved" && status !== "rejected") {
         throw new Error("Only approved/rejected applications can be deleted.");
       }
 
+      // delete ONLY the global application
       tx.delete(appRef);
-      tx.delete(userMirrorRef);
     });
 
     return NextResponse.json({ ok: true });
