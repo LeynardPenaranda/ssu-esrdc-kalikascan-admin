@@ -9,6 +9,38 @@ type Body = {
   adminNote: string | null;
 };
 
+async function sendIndiePushFromServer(params: {
+  fromToken: string; // admin idToken (same token you already validated)
+  toUid: string;
+  title: string;
+  message: string;
+  pushData?: any;
+}) {
+  // Call your existing push API route
+  const baseUrl =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.APP_URL ||
+    "http://localhost:3000";
+
+  const res = await fetch(`${baseUrl}/api/push/indie`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      authorization: `Bearer ${params.fromToken}`,
+    },
+    body: JSON.stringify({
+      toUid: params.toUid,
+      title: params.title,
+      message: params.message,
+      pushData: params.pushData ?? null,
+    }),
+  });
+
+  // Don’t crash the whole request if push fails, but do return info
+  const data = await res.json().catch(() => ({}));
+  return { ok: res.ok, data };
+}
+
 export async function POST(req: Request) {
   try {
     const authHeader = req.headers.get("authorization");
@@ -44,7 +76,7 @@ export async function POST(req: Request) {
       .doc(body.applicationId);
 
     const userRef = adminDb.collection("users").doc(body.uid);
-    //  THIS is the doc you showed:
+
     const userAppRef = userRef
       .collection("expert_applications")
       .doc(body.applicationId);
@@ -64,7 +96,6 @@ export async function POST(req: Request) {
       const appData = appSnap.data() as any;
       const userAppData = userAppSnap.data() as any;
 
-      //  Ensure both docs belong to the uid
       const globalUid = appData?.uid;
       const nestedUid = userAppData?.uid;
 
@@ -75,7 +106,6 @@ export async function POST(req: Request) {
         throw new Error("UID mismatch (user application)");
       }
 
-      //  Prevent re-review (check global, or check both)
       const currentStatus = (appData?.status ?? "pending") as string;
       if (currentStatus !== "pending") {
         throw new Error(`Already reviewed (${currentStatus})`);
@@ -88,13 +118,9 @@ export async function POST(req: Request) {
         reviewedBy: decoded.uid,
       };
 
-      //  Update GLOBAL
       tx.update(appRef, reviewPatch);
-
-      //  Update USER SUBCOLLECTION DOC
       tx.update(userAppRef, reviewPatch);
 
-      //  Update user role if approved (and optionally if rejected)
       if (body.status === "approved") {
         tx.set(
           userRef,
@@ -102,7 +128,6 @@ export async function POST(req: Request) {
           { merge: true },
         );
       } else {
-        // optional
         tx.set(
           userRef,
           { role: "regular", updatedAt: FieldValue.serverTimestamp() },
@@ -111,7 +136,35 @@ export async function POST(req: Request) {
       }
     });
 
-    return NextResponse.json({ ok: true });
+    // ✅ Send notification AFTER transaction succeeds
+    const isApproved = body.status === "approved";
+
+    const title = isApproved
+      ? "Expert application approved ✅"
+      : "Expert application rejected ❌";
+
+    const notePart =
+      body.adminNote && body.adminNote.trim()
+        ? `\n\nAdmin note: ${body.adminNote.trim()}`
+        : "";
+
+    const message = isApproved
+      ? `Congratulations! Your expert application has been approved.${notePart}\n\nPlease logout your account to clean/refresh the profile.`
+      : `Your expert application has been rejected.${notePart}`;
+
+    const pushResult = await sendIndiePushFromServer({
+      fromToken: idToken,
+      toUid: body.uid,
+      title,
+      message,
+      pushData: {
+        type: "expert_application_reviewed",
+        status: body.status,
+        applicationId: body.applicationId,
+      },
+    });
+
+    return NextResponse.json({ ok: true, push: pushResult });
   } catch (e: any) {
     return NextResponse.json(
       { error: e?.message ?? "Server error" },
