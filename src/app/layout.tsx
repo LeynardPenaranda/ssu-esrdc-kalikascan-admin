@@ -3,6 +3,7 @@ import "./globals.css";
 import { AuthProvider } from "./providers";
 import AuthRedirect from "@/src/components/AuthRedirect";
 import { ToastProvider } from "../hooks/useToast";
+import ReduxProvider from "./ReduxProvider";
 
 const poppins = localFont({
   src: [
@@ -22,12 +23,14 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full">
       <body className={`${poppins.variable} font-sans antialiased h-full`}>
-        <AuthProvider>
-          <ToastProvider>
-            <AuthRedirect />
-            {children}
-          </ToastProvider>
-        </AuthProvider>
+        <ReduxProvider>
+          <AuthProvider>
+            <ToastProvider>
+              <AuthRedirect />
+              {children}
+            </ToastProvider>
+          </AuthProvider>
+        </ReduxProvider>
       </body>
     </html>
   );

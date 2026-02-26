@@ -14,6 +14,9 @@ import ExpertApplicationsModal, {
 } from "@/src/components/modals/ExpertApplicationsModal";
 import ExpertApplicationReviewModal from "@/src/components/modals/ExpertApplicationReviewModal";
 import DeleteExpertApplicationModal from "@/src/components/modals/DeleteExpertApplicationModal";
+import { useAppDispatch } from "@/src/store/hooks";
+import { markSeen } from "@/src/lib/adminLastSeen";
+import { fetchAdminNotifSummary } from "@/src/store/slices/adminNotifSlice";
 
 export default function KalikaScanUsersPage() {
   const { showToast } = useToast();
@@ -46,6 +49,13 @@ export default function KalikaScanUsersPage() {
   const [delOpen, setDelOpen] = useState(false);
   const [delTarget, setDelTarget] = useState<ExpertApplication | null>(null);
   const [delLoading, setDelLoading] = useState(false);
+
+  const dispatch = useAppDispatch();
+
+  useEffect(() => {
+    markSeen("expert_applications");
+    dispatch(fetchAdminNotifSummary());
+  }, [dispatch]);
 
   async function safeReadJson(res: Response) {
     const text = await res.text();

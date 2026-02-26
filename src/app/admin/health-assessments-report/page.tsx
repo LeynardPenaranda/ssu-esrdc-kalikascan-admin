@@ -9,6 +9,9 @@ import { exportHealthAssessmentsToExcelCsv } from "@/src/utils/exportHealthAsses
 import DeleteConfirmModal from "@/src/components/modals/DeleteConfirmModal";
 import { useToast } from "@/src/hooks/useToast";
 import { auth } from "@/src/lib/firebase/client";
+import { useAppDispatch } from "@/src/store/hooks";
+import { markSeen } from "@/src/lib/adminLastSeen";
+import { fetchAdminNotifSummary } from "@/src/store/slices/adminNotifSlice";
 
 const PAGE_SIZE = 10;
 
@@ -91,6 +94,13 @@ export default function HealthAssessmentsReport() {
     id: string;
     label?: string;
   } | null>(null);
+
+  const dispatch = useAppDispatch();
+
+  useEffect(() => {
+    markSeen("health_assessments");
+    dispatch(fetchAdminNotifSummary());
+  }, [dispatch]);
 
   const loadHealth = useCallback(async () => {
     setRefreshing(true);

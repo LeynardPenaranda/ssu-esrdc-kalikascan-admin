@@ -1,6 +1,7 @@
 // src/components/AdminSidebar.tsx
 "use client";
 
+import React, { useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -10,33 +11,58 @@ import {
   MapPinned,
   Stethoscope,
   Users,
-  Settings,
   LogOut,
   ShieldUser,
   Sprout,
   SquareUser,
 } from "lucide-react";
 
+import { useAppDispatch, useAppSelector } from "@/src/store/hooks";
+import { fetchAdminNotifSummary } from "@/src/store/slices/adminNotifSlice";
+
+type NotifKey =
+  | "plant_scans"
+  | "map_posts"
+  | "health_assessments"
+  | "expert_applications";
+
 type NavItem = {
   label: string;
   href: string;
   icon: React.ComponentType<{ className?: string }>;
+  notifKey?: NotifKey;
 };
 
 const NAV: NavItem[] = [
   { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
+
   {
     label: "Plant Scans Report",
     href: "/admin/plant-scans-report",
     icon: Sprout,
+    notifKey: "plant_scans",
   },
-  { label: "Map Posts Report", href: "/admin/map-posts", icon: MapPinned },
+  {
+    label: "Map Posts Report",
+    href: "/admin/map-posts",
+    icon: MapPinned,
+    notifKey: "map_posts",
+  },
   {
     label: "Health Assessments Report",
     href: "/admin/health-assessments-report",
     icon: Stethoscope,
+    notifKey: "health_assessments",
   },
-  { label: "KalikaScan Users", href: "/admin/kalikascan-users", icon: Users },
+
+  //  Expert applications is inside KalikaScan Users page
+  {
+    label: "KalikaScan Users",
+    href: "/admin/kalikascan-users",
+    icon: Users,
+    notifKey: "expert_applications",
+  },
+
   {
     label: "Register New Admin",
     href: "/admin/create-admin",
@@ -45,13 +71,33 @@ const NAV: NavItem[] = [
   { label: "Profile", href: "/admin/profile", icon: SquareUser },
 ];
 
+function CountBadge({ count }: { count: number }) {
+  if (!count) return null;
+  const text = count > 99 ? "99+" : String(count);
+
+  return (
+    <span className="ml-auto rounded-full bg-red-500 px-2 py-0.5 text-[11px] font-semibold text-white">
+      {text}
+    </span>
+  );
+}
+
 export default function AdminSidebar() {
   const pathname = usePathname();
+  const dispatch = useAppDispatch();
+  const counts = useAppSelector((s) => s.adminNotif.counts);
 
   async function onLogout() {
     await auth.signOut();
     window.location.href = "/";
   }
+
+  //  Poll every 15 seconds
+  useEffect(() => {
+    dispatch(fetchAdminNotifSummary());
+    const id = setInterval(() => dispatch(fetchAdminNotifSummary()), 15000);
+    return () => clearInterval(id);
+  }, [dispatch]);
 
   return (
     <aside className="sticky top-0 h-screen w-72 shrink-0 border-r border-black/10 bg-white">
@@ -91,6 +137,8 @@ export default function AdminSidebar() {
 
               const Icon = item.icon;
 
+              const count = item.notifKey ? (counts[item.notifKey] ?? 0) : 0;
+
               return (
                 <li key={item.href}>
                   <Link
@@ -115,12 +163,14 @@ export default function AdminSidebar() {
                     {/* Label */}
                     <span>{item.label}</span>
 
+                    {/*  Notification badge (keeps your design) */}
+                    <CountBadge count={count} />
+
                     {/* Animated underline (hover + active) */}
                     <span
                       className={[
                         "pointer-events-none absolute left-3 right-3 -bottom-1 h-[2px] rounded-full bg-app-button",
                         "origin-left transform transition-transform duration-300 ease-out",
-                        // start hidden, grow left->right on hover
                         active
                           ? "scale-x-100"
                           : "scale-x-0 group-hover:scale-x-100",

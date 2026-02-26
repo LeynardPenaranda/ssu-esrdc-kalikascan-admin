@@ -8,12 +8,19 @@ export async function POST(req: Request) {
     const idToken = authHeader?.startsWith("Bearer ")
       ? authHeader.slice(7)
       : null;
-    if (!idToken)
+
+    if (!idToken) {
       return NextResponse.json({ error: "Missing token" }, { status: 401 });
+    }
 
     const decoded = await adminAuth.verifyIdToken(idToken);
 
-    const { toUid, title, message, pushData } = await req.json();
+    const { toUid, title, message, pushData } = (await req.json()) as {
+      toUid: string;
+      title: string;
+      message: string;
+      pushData?: any;
+    };
 
     if (!toUid || !title || !message) {
       return NextResponse.json({ error: "Missing fields" }, { status: 400 });
@@ -26,6 +33,7 @@ export async function POST(req: Request) {
 
     const appId = Number(process.env.NATIVE_NOTIFY_APP_ID);
     const appToken = process.env.NATIVE_NOTIFY_APP_TOKEN;
+
     if (!appId || !appToken) {
       return NextResponse.json({ error: "Missing env" }, { status: 500 });
     }
@@ -47,6 +55,7 @@ export async function POST(req: Request) {
     );
 
     const data = await res.json().catch(() => ({}));
+
     return NextResponse.json(
       { ok: res.ok, data },
       { status: res.ok ? 200 : 400 },
