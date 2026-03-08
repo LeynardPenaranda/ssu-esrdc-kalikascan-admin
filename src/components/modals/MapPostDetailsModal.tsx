@@ -479,7 +479,7 @@ export default function MapPostDetailsModal({
             {/* Address + Map + Coordinates */}
             <div className="w-full text-center">
               <div className="text-xs text-gray-600">
-                Captured In: <span className="font-semibold">{address}</span>
+                Captured in: <span className="font-semibold">{address}</span>
               </div>
 
               {hasCoords ? (
