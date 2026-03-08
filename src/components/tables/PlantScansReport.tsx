@@ -522,7 +522,7 @@ export default function PlantScansReport() {
                         ) : null}
 
                         <div className="min-w-0">
-                          <div className="font-medium truncate">
+                          <div className="font-medium truncate italic">
                             {r.topSuggestion?.name ?? r.plantName ?? "—"}
                           </div>
                           <div className="text-xs text-gray-500 truncate">

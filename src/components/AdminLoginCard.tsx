@@ -211,7 +211,7 @@ export default function AdminLoginCard({ onSuccess }: Props) {
           <button
             type="button"
             disabled={loading}
-            className="absolute top-8 right-2 p-1 rounded-md hover:bg-gray-100 disabled:opacity-50"
+            className="absolute top-7 right-2 p-1 rounded-md hover:bg-gray-100 disabled:opacity-50"
             onClick={() => setIsOpenEye((v) => !v)}
             aria-label={isOpenEye ? "Hide password" : "Show password"}
           >

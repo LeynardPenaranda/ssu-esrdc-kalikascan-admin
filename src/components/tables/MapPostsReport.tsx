@@ -516,7 +516,7 @@ export default function MapPostsReport() {
                         ) : null}
 
                         <div className="min-w-0">
-                          <div className="font-medium truncate">
+                          <div className="font-medium truncate italic">
                             {scientificName}
                           </div>
                           <div className="text-xs text-gray-500 truncate">

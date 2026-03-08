@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
 import AdminGuard from "@/src/components/AdminGuard";
 import AdminSidebar from "@/src/components/AdminSidebar";
 import { Drawer, Button } from "antd";
@@ -12,29 +13,29 @@ export default function AdminLayout({
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-
-  // Decide what you consider "desktop"
-  // If you want Drawer for mobile+tablet, then show fixed sidebar only on lg+
-  // Tailwind: lg = 1024px
+  const pathname = usePathname();
   const drawerWidth = useMemo(() => 280, []);
+
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
 
   return (
     <AdminGuard>
-      {/* Optional: container for container-query variants if you use them */}
       <div className="h-screen bg-app-bg @container">
         <div className="flex h-full">
-          {/*  Desktop Sidebar (visible on lg+) */}
-          <div className="hidden lg:block">
+          {/* Desktop Sidebar */}
+          <aside className="hidden h-full w-[280px] shrink-0 lg:block">
             <AdminSidebar />
-          </div>
+          </aside>
 
-          {/*  Mobile/Tablet Drawer Sidebar (shown below lg) */}
+          {/* Mobile/Tablet Drawer Sidebar */}
           <Drawer
             title="KalikaScan Admin"
             placement="left"
             open={open}
             onClose={() => setOpen(false)}
-            size="default" // or "large"
+            size={drawerWidth}
             destroyOnHidden
             styles={{
               body: {
@@ -48,9 +49,9 @@ export default function AdminLayout({
           </Drawer>
 
           {/* Main area */}
-          <div className="flex-1 h-full flex flex-col min-w-0">
-            {/*  Topbar only on mobile/tablet */}
-            <header className="sticky top-0 z-20 flex items-center gap-3 bg-app-bg/90 backdrop-blur px-3 py-3 border-b lg:hidden">
+          <div className="flex h-full min-w-0 flex-1 flex-col">
+            {/* Topbar only on mobile/tablet */}
+            <header className="sticky top-0 z-20 flex items-center gap-3 border-b bg-app-bg/90 px-3 py-3 backdrop-blur lg:hidden">
               <Button
                 type="primary"
                 style={{
@@ -63,9 +64,7 @@ export default function AdminLayout({
               <div className="font-semibold">KalikaScan Admin</div>
             </header>
 
-            <main className="flex-1 h-full overflow-y-auto min-w-0">
-              {children}
-            </main>
+            <main className="flex-1 min-w-0 overflow-y-auto">{children}</main>
           </div>
         </div>
       </div>

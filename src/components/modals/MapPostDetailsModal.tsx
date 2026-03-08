@@ -501,7 +501,7 @@ export default function MapPostDetailsModal({
             </div>
 
             {/* Plant name */}
-            <div className="w-full text-center text-2xl font-extrabold text-emerald-700">
+            <div className="w-full text-center text-2xl font-extrabold text-emerald-700 italic">
               {mainName}
             </div>
 
