@@ -14,6 +14,26 @@ import { markSeen } from "@/src/lib/adminLastSeen";
 import { fetchAdminNotifSummary } from "@/src/store/slices/adminNotifSlice";
 
 const PAGE_SIZE = 10;
+const NOT_PLANT_THRESHOLD = 0.1;
+
+type HealthAssessmentRowEx = HealthAssessmentRow & {
+  isPlantBinary?: boolean | null;
+  isPlantProbability?: number | null;
+  response?: {
+    result?: {
+      is_plant?: {
+        binary?: boolean | null;
+        probability?: number | null;
+        threshold?: number | null;
+      };
+      is_healthy?: {
+        binary?: boolean | null;
+        probability?: number | null;
+        threshold?: number | null;
+      };
+    };
+  } | null;
+};
 
 function pct(n: number | null | undefined) {
   if (typeof n !== "number" || !Number.isFinite(n)) return "—";
@@ -40,11 +60,89 @@ function initials(s?: string | null) {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
-function resultPill(isHealthyBinary: boolean | null | undefined) {
+function getPlantSignals(row: HealthAssessmentRowEx) {
+  const nestedBinary = row.response?.result?.is_plant?.binary;
+  const nestedProbability = row.response?.result?.is_plant?.probability;
+
+  const binary =
+    typeof nestedBinary === "boolean"
+      ? nestedBinary
+      : typeof row.isPlantBinary === "boolean"
+        ? row.isPlantBinary
+        : null;
+
+  const probability =
+    typeof nestedProbability === "number"
+      ? nestedProbability
+      : typeof row.isPlantProbability === "number"
+        ? row.isPlantProbability
+        : null;
+
+  const inferredBinary =
+    binary != null
+      ? binary
+      : typeof probability === "number"
+        ? probability < NOT_PLANT_THRESHOLD
+          ? false
+          : true
+        : null;
+
+  const notPlant =
+    inferredBinary === false ||
+    (typeof probability === "number" && probability < NOT_PLANT_THRESHOLD);
+
+  return {
+    binary: inferredBinary,
+    probability,
+    notPlant,
+  };
+}
+
+function getPlantMeta(row: HealthAssessmentRowEx) {
+  const { binary, probability, notPlant } = getPlantSignals(row);
+
+  if (notPlant) {
+    return {
+      isPlant: false,
+      label:
+        probability != null ? `Not Plant (${pct(probability)})` : "Not Plant",
+      badgeClass: "border-red-200 bg-red-50 text-red-700",
+      rowClass: "bg-red-50 hover:!bg-red-100",
+    };
+  }
+
+  if (binary === true) {
+    return {
+      isPlant: true,
+      label: probability != null ? `Plant (${pct(probability)})` : "Plant",
+      badgeClass: "border-green-200 bg-green-50 text-green-700",
+      rowClass: "",
+    };
+  }
+
+  return {
+    isPlant: null as boolean | null,
+    label: probability != null ? `Unknown (${pct(probability)})` : "Unknown",
+    badgeClass: "border-gray-200 bg-gray-50 text-gray-600",
+    rowClass: "",
+  };
+}
+
+function resultPill(row: HealthAssessmentRowEx) {
   const base =
     "inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold";
 
-  if (isHealthyBinary === true) {
+  const { notPlant } = getPlantSignals(row);
+
+  if (notPlant) {
+    return (
+      <span className={`${base} border-red-200 bg-red-50 text-red-700`}>
+        Not Plant 🚫🌿
+      </span>
+    );
+  }
+
+  if (row.isHealthyBinary === true) {
     return (
       <span
         className={`${base} border-emerald-200 bg-emerald-50 text-emerald-700`}
@@ -54,7 +152,7 @@ function resultPill(isHealthyBinary: boolean | null | undefined) {
     );
   }
 
-  if (isHealthyBinary === false) {
+  if (row.isHealthyBinary === false) {
     return (
       <span className={`${base} border-red-200 bg-red-50 text-red-700`}>
         Unhealthy 🩺
@@ -73,22 +171,20 @@ export default function HealthAssessmentsReport() {
   const { showToast } = useToast();
 
   const [loading, setLoading] = useState(true);
-  const [rows, setRows] = useState<HealthAssessmentRow[]>([]);
+  const [rows, setRows] = useState<HealthAssessmentRowEx[]>([]);
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
 
   const [addrMap, setAddrMap] = useState<Record<string, string>>({});
 
   const [open, setOpen] = useState(false);
-  const [selected, setSelected] = useState<HealthAssessmentRow | null>(null);
+  const [selected, setSelected] = useState<HealthAssessmentRowEx | null>(null);
 
   const [downloading, setDownloading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  // per-row delete loading
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // delete confirm modal
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<{
     id: string;
@@ -124,7 +220,6 @@ export default function HealthAssessmentsReport() {
 
   useEffect(() => setPage(1), [q]);
 
-  // Reverse geocode missing addresses
   useEffect(() => {
     const missing = rows.filter(
       (r) =>
@@ -192,24 +287,32 @@ export default function HealthAssessmentsReport() {
       const day = r.createdDay || "";
       const addr = r.addressText || "";
 
-      const status =
-        r.isHealthyBinary == null
+      const { notPlant, binary } = getPlantSignals(r);
+
+      const healthStatus = notPlant
+        ? ""
+        : r.isHealthyBinary == null
           ? ""
           : r.isHealthyBinary
             ? "healthy"
             : "unhealthy";
 
-      const topDisease =
-        r.diseaseName ||
-        r.topDisease?.name ||
-        r.topDisease?.details?.local_name ||
-        "";
+      const plantStatus =
+        binary == null && !notPlant ? "" : notPlant ? "not plant" : "plant";
+
+      const topDisease = notPlant
+        ? ""
+        : r.diseaseName ||
+          r.topDisease?.name ||
+          r.topDisease?.details?.local_name ||
+          "";
 
       return (
         userText.toLowerCase().includes(s) ||
         day.toLowerCase().includes(s) ||
         addr.toLowerCase().includes(s) ||
-        status.includes(s) ||
+        healthStatus.includes(s) ||
+        plantStatus.includes(s) ||
         String(topDisease).toLowerCase().includes(s)
       );
     });
@@ -237,10 +340,11 @@ export default function HealthAssessmentsReport() {
     setPage((p) => Math.min(totalPages, p + 1));
   }
 
-  function openDetailsRow(r: HealthAssessmentRow) {
+  function openDetailsRow(r: HealthAssessmentRowEx) {
     setSelected(r);
     setOpen(true);
   }
+
   function closeDetails() {
     setOpen(false);
     setSelected(null);
@@ -261,20 +365,25 @@ export default function HealthAssessmentsReport() {
     }
   }
 
-  function askDelete(r: HealthAssessmentRow) {
-    const topDisease =
-      r.diseaseName ||
-      r.topDisease?.details?.local_name ||
-      r.topDisease?.name ||
-      "";
+  function askDelete(r: HealthAssessmentRowEx) {
+    const { notPlant } = getPlantSignals(r);
 
-    const label = topDisease
-      ? `Top disease: ${topDisease}`
-      : r.isHealthyBinary === true
-        ? "Healthy result"
-        : r.isHealthyBinary === false
-          ? "Unhealthy result"
-          : "Health assessment";
+    const topDisease = notPlant
+      ? ""
+      : r.diseaseName ||
+        r.topDisease?.details?.local_name ||
+        r.topDisease?.name ||
+        "";
+
+    const label = notPlant
+      ? "Not Plant Result"
+      : topDisease
+        ? `Top disease: ${topDisease}`
+        : r.isHealthyBinary === true
+          ? "Healthy result"
+          : r.isHealthyBinary === false
+            ? "Unhealthy result"
+            : "Health assessment";
 
     setPendingDelete({ id: r.id, label });
     setDeleteOpen(true);
@@ -316,7 +425,6 @@ export default function HealthAssessmentsReport() {
         return;
       }
 
-      // close details modal if deleting currently open row
       setOpen((wasOpen) => {
         if (wasOpen && selected?.id === assessmentId) {
           setSelected(null);
@@ -325,7 +433,6 @@ export default function HealthAssessmentsReport() {
         return wasOpen;
       });
 
-      // remove from table instantly
       setRows((prev) => prev.filter((x) => x.id !== assessmentId));
 
       showToast({
@@ -346,8 +453,6 @@ export default function HealthAssessmentsReport() {
 
   return (
     <div className="w-full h-full overflow-hidden flex flex-col mt-5">
-      {/* Top bar */}
-
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
         <div className="text-xs text-gray-500">
           {loading ? (
@@ -378,9 +483,7 @@ export default function HealthAssessmentsReport() {
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          {/* LEFT SIDE — SEARCH */}
           <div className="flex items-center gap-2 w-full sm:w-auto">
-            {/* Mobile search */}
             <div className="sm:hidden flex-1">
               <input
                 value={q}
@@ -390,7 +493,6 @@ export default function HealthAssessmentsReport() {
               />
             </div>
 
-            {/* Desktop search */}
             <div className="hidden sm:block">
               <input
                 value={q}
@@ -412,7 +514,6 @@ export default function HealthAssessmentsReport() {
             )}
           </div>
 
-          {/* RIGHT SIDE — ACTIONS */}
           <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
             <button
               type="button"
@@ -470,7 +571,6 @@ export default function HealthAssessmentsReport() {
         </div>
       </div>
 
-      {/* Table */}
       <div className="flex-1 min-h-0 overflow-x-auto overflow-y-auto rounded-xl border border-gray-100 bg-white">
         <table className="min-w-[1200px] table-fixed text-sm">
           <thead className="sticky top-0 bg-white z-10">
@@ -527,11 +627,15 @@ export default function HealthAssessmentsReport() {
                 const lat = r.location?.latitude ?? null;
                 const lon = r.location?.longitude ?? null;
 
-                const topDisease =
-                  r.diseaseName ||
-                  r.topDisease?.details?.local_name ||
-                  r.topDisease?.name ||
-                  "—";
+                const plantMeta = getPlantMeta(r);
+                const isNotPlant = plantMeta.isPlant === false;
+
+                const topDisease = isNotPlant
+                  ? "Not Plant"
+                  : r.diseaseName ||
+                    r.topDisease?.details?.local_name ||
+                    r.topDisease?.name ||
+                    "—";
 
                 const isDeleting = deletingId === r.id;
 
@@ -539,12 +643,13 @@ export default function HealthAssessmentsReport() {
                   <tr
                     key={r.id}
                     onClick={() => openDetailsRow(r)}
-                    className="bg-white border-b border-gray-50 cursor-pointer hover:bg-gray-50"
+                    className={`border-b border-gray-50 cursor-pointer transition ${
+                      plantMeta.rowClass || "bg-white hover:bg-gray-50"
+                    }`}
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3 min-w-0">
                         {r.user?.photoURL ? (
-                          // eslint-disable-next-line @next/next/no-img-element
                           <img
                             src={r.user.photoURL}
                             alt=""
@@ -567,9 +672,16 @@ export default function HealthAssessmentsReport() {
                       </div>
                     </td>
 
-                    {/* ✅ colored Result pill */}
                     <td className="px-4 py-3">
-                      {resultPill(r.isHealthyBinary)}
+                      <div className="flex flex-col items-start gap-1">
+                        {resultPill(r)}
+
+                        <span
+                          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${plantMeta.badgeClass}`}
+                        >
+                          {plantMeta.label}
+                        </span>
+                      </div>
                     </td>
 
                     <td className="px-4 py-3 text-gray-700">
@@ -578,7 +690,11 @@ export default function HealthAssessmentsReport() {
 
                     <td className="px-4 py-3 text-gray-700">
                       <div className="min-w-0">
-                        <div className="truncate">{topDisease}</div>
+                        <div
+                          className={`truncate ${isNotPlant ? "text-red-700 font-medium" : ""}`}
+                        >
+                          {topDisease}
+                        </div>
                         <div className="text-xs text-gray-500 truncate">
                           Assessment ID:{" "}
                           <span className="font-mono">{r.id}</span>
@@ -618,7 +734,6 @@ export default function HealthAssessmentsReport() {
                       )}
                     </td>
 
-                    {/* ✅ Actions */}
                     <td className="px-4 py-3 text-right">
                       <button
                         type="button"
@@ -642,7 +757,6 @@ export default function HealthAssessmentsReport() {
         </table>
       </div>
 
-      {/* Bottom pagination */}
       {total > PAGE_SIZE ? (
         <div className="mt-3 flex items-center justify-end gap-2">
           <button
@@ -668,7 +782,6 @@ export default function HealthAssessmentsReport() {
         </div>
       ) : null}
 
-      {/* ✅ Delete confirm modal */}
       <DeleteConfirmModal
         open={deleteOpen}
         title="Delete this health assessment?"

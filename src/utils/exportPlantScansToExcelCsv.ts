@@ -12,7 +12,6 @@ function joinList(list: any) {
     .join(", ");
 }
 
-// Proper CSV escaping
 function csvCell(value: string) {
   const v = safe(value);
   const escaped = v.replace(/"/g, '""');
@@ -20,10 +19,16 @@ function csvCell(value: string) {
   return escaped;
 }
 
+function getIsPlantText(row: PlantScanRow) {
+  if (row.isPlantBinary == null) return "Unknown";
+  return row.isPlantBinary ? "Yes" : "No";
+}
+
 export function exportPlantScansToExcelCsv(scans: PlantScanRow[]) {
   const headers = [
     "Scanned By",
     "User Email",
+    "Is Plant",
     "Scientific Name",
     "Confidence (%)",
     "Scanned Date",
@@ -48,18 +53,23 @@ export function exportPlantScansToExcelCsv(scans: PlantScanRow[]) {
       r.user?.displayName || r.user?.username || r.user?.email || "Unknown";
 
     const email = r.user?.email || "";
+    const isPlant = getIsPlantText(r);
 
     const top = r.topSuggestion ?? {};
     const taxonomy = top.taxonomy ?? {};
 
-    const scientificName = top.name ?? r.plantName ?? "";
+    const shouldIncludePlantDetails = r.isPlantBinary !== false;
+
+    const scientificName = shouldIncludePlantDetails
+      ? (top.name ?? r.plantName ?? "")
+      : "";
+
     const confidencePct =
       typeof r.confidence === "number" ? Math.round(r.confidence * 100) : "";
 
     const scannedDate = r.createdDay ?? "";
     const address = r.addressText ?? "";
 
-    // captured images / image urls
     const imageUrls = Array.isArray((r as any).imageUrls)
       ? ((r as any).imageUrls as string[])
       : Array.isArray((r as any).images)
@@ -69,19 +79,20 @@ export function exportPlantScansToExcelCsv(scans: PlantScanRow[]) {
     const row = [
       safe(userName),
       safe(email),
+      safe(isPlant),
       safe(scientificName),
       safe(confidencePct),
       safe(scannedDate),
       safe(address),
       safe(r.latitude ?? ""),
       safe(r.longitude ?? ""),
-      safe(taxonomy.kingdom ?? ""),
-      safe(taxonomy.phylum ?? ""),
-      safe(taxonomy.class ?? ""),
-      safe(taxonomy.order ?? ""),
-      safe(taxonomy.family ?? ""),
-      safe(taxonomy.genus ?? ""),
-      joinList(top.common_names),
+      safe(shouldIncludePlantDetails ? (taxonomy.kingdom ?? "") : ""),
+      safe(shouldIncludePlantDetails ? (taxonomy.phylum ?? "") : ""),
+      safe(shouldIncludePlantDetails ? (taxonomy.class ?? "") : ""),
+      safe(shouldIncludePlantDetails ? (taxonomy.order ?? "") : ""),
+      safe(shouldIncludePlantDetails ? (taxonomy.family ?? "") : ""),
+      safe(shouldIncludePlantDetails ? (taxonomy.genus ?? "") : ""),
+      safe(shouldIncludePlantDetails ? joinList(top.common_names) : ""),
       safe(imageUrls.join(" | ")),
     ];
 

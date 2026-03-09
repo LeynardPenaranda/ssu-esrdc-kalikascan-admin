@@ -38,6 +38,42 @@ function initials(s?: string | null) {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
+function getIsPlantMeta(row: PlantScanRow) {
+  if (row.isPlantBinary == null) {
+    return {
+      label: "Unknown",
+      shortLabel: "Unknown",
+      isPlant: null as boolean | null,
+      rowClass: "",
+      badgeClass: "bg-gray-100 text-gray-700 border border-gray-200",
+    };
+  }
+
+  if (row.isPlantBinary) {
+    return {
+      label:
+        row.isPlantProbability != null
+          ? `Plant (${pct(row.isPlantProbability)})`
+          : "Plant",
+      shortLabel: "Plant",
+      isPlant: true,
+      rowClass: "",
+      badgeClass: "bg-green-50 text-green-700 border border-green-200",
+    };
+  }
+
+  return {
+    label:
+      row.isPlantProbability != null
+        ? `Not Plant (${pct(row.isPlantProbability)})`
+        : "Not Plant",
+    shortLabel: "Not Plant",
+    isPlant: false,
+    rowClass: "bg-red-50 hover:!bg-red-100",
+    badgeClass: "bg-red-50 text-red-700 border border-red-200",
+  };
+}
+
 export default function PlantScansReport() {
   const { showToast } = useToast();
 
@@ -54,10 +90,8 @@ export default function PlantScansReport() {
   const [downloading, setDownloading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  //  per-row delete loading
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  //  delete modal state (reusable)
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<{
     id: string;
@@ -84,7 +118,6 @@ export default function PlantScansReport() {
 
   useEffect(() => setPage(1), [q]);
 
-  // reverse geocode missing addresses
   useEffect(() => {
     const missing = rows.filter(
       (r) =>
@@ -147,12 +180,19 @@ export default function PlantScansReport() {
       const plant = r.plantName || r.topSuggestion?.name || "";
       const day = r.createdDay || "";
       const addr = r.addressText || "";
+      const plantState =
+        r.isPlantBinary == null
+          ? "unknown"
+          : r.isPlantBinary
+            ? "plant"
+            : "not plant";
 
       return (
         userText.toLowerCase().includes(s) ||
         plant.toLowerCase().includes(s) ||
         day.toLowerCase().includes(s) ||
-        addr.toLowerCase().includes(s)
+        addr.toLowerCase().includes(s) ||
+        plantState.includes(s)
       );
     });
   }, [rows, q]);
@@ -197,15 +237,19 @@ export default function PlantScansReport() {
     }
   }
 
-  //  open delete modal (instead of window.confirm)
   function askDelete(r: PlantScanRow) {
+    const plantMeta = getIsPlantMeta(r);
+
     const label =
-      r.topSuggestion?.name ??
-      r.plantName ??
-      r.user?.displayName ??
-      r.user?.email ??
-      r.uid ??
-      "Plant Scan";
+      plantMeta.isPlant === false
+        ? "Not Plant Scan"
+        : (r.topSuggestion?.name ??
+          r.plantName ??
+          r.user?.displayName ??
+          r.user?.email ??
+          r.uid ??
+          "Plant Scan");
+
     setPendingDelete({ id: r.id, label: String(label) });
     setDeleteOpen(true);
   }
@@ -246,7 +290,6 @@ export default function PlantScansReport() {
         return;
       }
 
-      //  close details modal if deleting the one currently open
       setOpen((wasOpen) => {
         if (wasOpen && selected?.id === scanId) {
           setSelected(null);
@@ -255,10 +298,8 @@ export default function PlantScansReport() {
         return wasOpen;
       });
 
-      //  remove from table instantly
       setRows((prev) => prev.filter((x) => x.id !== scanId));
 
-      //  success toast
       showToast({
         type: "success",
         message: "Deleted successfully",
@@ -280,7 +321,6 @@ export default function PlantScansReport() {
 
   return (
     <div className="w-full h-full overflow-hidden flex flex-col">
-      {/*  Reusable delete confirm modal */}
       <DeleteConfirmModal
         open={deleteOpen}
         title="Delete plant scan?"
@@ -304,8 +344,6 @@ export default function PlantScansReport() {
         }}
       />
 
-      {/* Top bar */}
-      {/* Top bar (keep OLD desktop layout; only change on small screens) */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
         <div className="text-xs text-gray-500">
           {loading ? (
@@ -332,14 +370,8 @@ export default function PlantScansReport() {
           ) : null}
         </div>
 
-        {/*  Buttons area:
-      - Desktop (sm+): your original row w/ hidden input (sm:block input)
-      - Mobile (<sm): input becomes part of this same row + wraps nicely
-  */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          {/* LEFT SIDE — SEARCH */}
           <div className="flex items-center gap-2 w-full sm:w-auto">
-            {/* Mobile search */}
             <div className="sm:hidden flex-1">
               <input
                 value={q}
@@ -349,7 +381,6 @@ export default function PlantScansReport() {
               />
             </div>
 
-            {/* Desktop search */}
             <div className="hidden sm:block">
               <input
                 value={q}
@@ -370,7 +401,6 @@ export default function PlantScansReport() {
             )}
           </div>
 
-          {/* RIGHT SIDE — ACTIONS */}
           <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
             <button
               type="button"
@@ -426,7 +456,6 @@ export default function PlantScansReport() {
         </div>
       </div>
 
-      {/* table */}
       <div className="flex-1 min-h-0 overflow-x-auto overflow-y-auto rounded-xl border border-gray-100 bg-white">
         <table className="min-w-[1100px] table-fixed text-sm">
           <thead className="sticky top-0 bg-white z-10">
@@ -477,17 +506,22 @@ export default function PlantScansReport() {
                   "Unknown user";
 
                 const isDeleting = deletingId === r.id;
+                const plantMeta = getIsPlantMeta(r);
+                const isNotPlant = plantMeta.isPlant === false;
+
+                const plantDisplayName = isNotPlant
+                  ? "Not Plant"
+                  : (r.topSuggestion?.name ?? r.plantName ?? "—");
 
                 return (
                   <tr
                     key={r.id}
                     onClick={() => openDetails(r)}
-                    className="bg-white border-b border-gray-50 cursor-pointer hover:bg-gray-50"
+                    className={`border-b border-gray-50 cursor-pointer transition ${plantMeta.rowClass || "bg-white hover:bg-gray-50"}`}
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3 min-w-0">
                         {r.user?.photoURL ? (
-                          // eslint-disable-next-line @next/next/no-img-element
                           <img
                             src={r.user.photoURL}
                             alt=""
@@ -513,7 +547,6 @@ export default function PlantScansReport() {
                     <td className="px-4 py-3 text-gray-900">
                       <div className="flex items-center gap-3">
                         {r.imageUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
                           <img
                             src={r.imageUrl}
                             alt=""
@@ -522,9 +555,20 @@ export default function PlantScansReport() {
                         ) : null}
 
                         <div className="min-w-0">
-                          <div className="font-medium truncate italic">
-                            {r.topSuggestion?.name ?? r.plantName ?? "—"}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <div
+                              className={`font-medium truncate ${isNotPlant ? "text-red-700 not-italic" : "italic"}`}
+                            >
+                              {plantDisplayName}
+                            </div>
+
+                            {isNotPlant ? (
+                              <span className="inline-flex items-center rounded-full border border-red-200 bg-red-100 px-2 py-0.5 text-[11px] font-medium text-red-700">
+                                Not Plant
+                              </span>
+                            ) : null}
                           </div>
+
                           <div className="text-xs text-gray-500 truncate">
                             Scan ID: <span className="font-mono">{r.id}</span>
                           </div>
@@ -537,11 +581,11 @@ export default function PlantScansReport() {
                     </td>
 
                     <td className="px-4 py-3 text-gray-700">
-                      {r.isPlantBinary == null
-                        ? "—"
-                        : r.isPlantBinary
-                          ? `Yes (${pct(r.isPlantProbability)})`
-                          : `No (${pct(r.isPlantProbability)})`}
+                      <span
+                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${plantMeta.badgeClass}`}
+                      >
+                        {plantMeta.label}
+                      </span>
                     </td>
 
                     <td className="px-4 py-3 text-gray-700">
@@ -576,7 +620,6 @@ export default function PlantScansReport() {
                       )}
                     </td>
 
-                    {/*  Actions */}
                     <td className="px-4 py-3 text-right">
                       <button
                         type="button"
@@ -600,7 +643,6 @@ export default function PlantScansReport() {
         </table>
       </div>
 
-      {/* Bottom pagination */}
       {total > PAGE_SIZE ? (
         <div className="mt-3 flex items-center justify-end gap-2">
           <button
