@@ -18,12 +18,11 @@ type UserSnap = {
 };
 
 type SimilarImage = {
-  url?: string | null; // full quality
+  url?: string | null;
   url_small?: string | null;
   similarity?: number | null;
   citation?: string | null;
   license_name?: string | null;
-  // optional if your API provides it
   license_url?: string | null;
 };
 
@@ -97,9 +96,48 @@ function normalizeProbability(raw: any): number | null {
 
 function getConfidence(p?: number | null) {
   if (typeof p !== "number") return null;
-  if (p >= 0.85) return { label: "High", color: "#2E7D32", bg: "#E8F5E9" };
-  if (p >= 0.6) return { label: "Medium", color: "#F9A825", bg: "#FFF8E1" };
-  return { label: "Low", color: "#C62828", bg: "#FFEBEE" };
+
+  const clamped = Math.max(0, Math.min(1, p));
+  const percent = Math.round(clamped * 100);
+
+  if (clamped >= 0.85) {
+    return {
+      label: "High",
+      color: "#2E7D32",
+      bg: "#E8F5E9",
+      border: "#C8E6C9",
+      percent,
+    };
+  }
+
+  if (clamped >= 0.6) {
+    return {
+      label: "Medium",
+      color: "#F9A825",
+      bg: "#FFF8E1",
+      border: "#FFECB3",
+      percent,
+    };
+  }
+
+  return {
+    label: "Low",
+    color: "#C62828",
+    bg: "#FFEBEE",
+    border: "#FFCDD2",
+    percent,
+  };
+}
+
+function isNotPlantScan(scan: PlantScanRow | null): boolean {
+  if (!scan) return false;
+
+  const binary = scan.isPlantBinary;
+  const prob =
+    normalizeProbability(scan.isPlantProbability) ??
+    normalizeProbability(scan.confidence);
+
+  return binary === false || (typeof prob === "number" && prob < 0.1);
 }
 
 function formatLatLon(lat: number, lon: number) {
@@ -150,6 +188,8 @@ export default function PlantScanDetailsModal({
   const top = safeScan?.topSuggestion ?? {};
   const taxonomy = top?.taxonomy ?? {};
 
+  const notPlant = useMemo(() => isNotPlantScan(safeScan), [safeScan]);
+
   const images = useMemo(() => {
     const s = safeScan;
     if (!s) return [];
@@ -158,8 +198,9 @@ export default function PlantScanDetailsModal({
     return list.filter(Boolean);
   }, [safeScan]);
 
-  // ✅ items for SimilarImagesCarousel (includes similarity/license/citation)
   const similarItems = useMemo(() => {
+    if (notPlant) return [];
+
     const arr = Array.isArray(top?.similar_images) ? top.similar_images : [];
     return arr
       .map((img) => ({
@@ -167,22 +208,35 @@ export default function PlantScanDetailsModal({
         similarity: typeof img?.similarity === "number" ? img.similarity : null,
         citation: img?.citation ?? null,
         license_name: img?.license_name ?? null,
-        license_url: (img as any)?.license_url ?? null,
+        license_url: img?.license_url ?? null,
       }))
       .filter((x) => x.url.length > 0);
-  }, [top?.similar_images]);
+  }, [top?.similar_images, notPlant]);
 
   const mainName = useMemo(() => {
+    if (notPlant) return "Not a Plant";
     return top?.name ?? safeScan?.plantName ?? "Unknown";
-  }, [top?.name, safeScan?.plantName]);
+  }, [notPlant, top?.name, safeScan?.plantName]);
 
   const probability01 = useMemo(() => {
     const s = safeScan;
+
+    if (notPlant) {
+      const fromIsPlant = normalizeProbability(s?.isPlantProbability);
+      const fromRoot = normalizeProbability(s?.confidence);
+      return fromIsPlant ?? fromRoot ?? null;
+    }
+
     const fromTop = normalizeProbability(top?.probability);
     const fromIsPlant = normalizeProbability(s?.isPlantProbability);
     const fromRoot = normalizeProbability(s?.confidence);
     return fromTop ?? fromIsPlant ?? fromRoot ?? null;
-  }, [top?.probability, safeScan?.isPlantProbability, safeScan?.confidence]);
+  }, [
+    notPlant,
+    top?.probability,
+    safeScan?.isPlantProbability,
+    safeScan?.confidence,
+  ]);
 
   const confidenceMeta = useMemo(
     () => getConfidence(probability01),
@@ -201,23 +255,29 @@ export default function PlantScanDetailsModal({
   }, [safeScan?.caption]);
 
   const commonNames = useMemo(() => {
+    if (notPlant) return [];
     const list = Array.isArray(top?.common_names) ? top.common_names : [];
     return list.filter(Boolean);
-  }, [top?.common_names]);
+  }, [top?.common_names, notPlant]);
 
   const synonyms = useMemo(() => {
+    if (notPlant) return [];
     const list = Array.isArray(top?.synonyms) ? top.synonyms : [];
     return list.filter(Boolean);
-  }, [top?.synonyms]);
+  }, [top?.synonyms, notPlant]);
 
-  const descriptionText = useMemo(
-    () => (top?.description ?? "").trim() || "N/A",
-    [top?.description],
-  );
+  const descriptionText = useMemo(() => {
+    if (notPlant) {
+      return "This scanned image does not appear to be a plant. Try uploading or scanning a clearer photo where the plant is the main subject and visible leaves, stem, bark, or full shape can be seen.";
+    }
+    return (top?.description ?? "").trim() || "N/A";
+  }, [top?.description, notPlant]);
+
   const commonUsesText = useMemo(
     () => (top?.common_uses ?? "").trim() || "N/A",
     [top?.common_uses],
   );
+
   const culturalSignificance = useMemo(
     () => (top?.cultural_significance ?? "").trim() || "N/A",
     [top?.cultural_significance],
@@ -245,11 +305,12 @@ export default function PlantScanDetailsModal({
   const hasCoords = safeScan?.latitude != null && safeScan?.longitude != null;
 
   const hasAnyTaxonomy = useMemo(() => {
+    if (notPlant) return false;
     const t = taxonomy ?? {};
     return Boolean(
       t.kingdom || t.phylum || t.class || t.order || t.family || t.genus,
     );
-  }, [taxonomy]);
+  }, [taxonomy, notPlant]);
 
   useEffect(() => {
     if (open) {
@@ -275,7 +336,6 @@ export default function PlantScanDetailsModal({
 
   return (
     <div className="fixed inset-0 z-[999] flex items-end justify-center">
-      {/* Backdrop */}
       <div
         className={`absolute inset-0 transition-opacity duration-200 ${
           open ? "opacity-100 bg-black/30" : "opacity-0"
@@ -283,7 +343,6 @@ export default function PlantScanDetailsModal({
         onClick={onClose}
       />
 
-      {/* Sheet */}
       <div
         ref={sheetRef}
         tabIndex={-1}
@@ -292,7 +351,6 @@ export default function PlantScanDetailsModal({
         }`}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="flex items-center justify-between gap-3 px-4 py-4 border-b border-gray-100">
           <div className="flex items-center gap-3 min-w-0">
             <div className="relative">
@@ -328,15 +386,12 @@ export default function PlantScanDetailsModal({
           </button>
         </div>
 
-        {/* Body */}
         <div className="h-[calc(90vh-64px)] overflow-auto px-4 py-4">
           <div className="flex flex-col items-center gap-4">
-            {/* Scan Images */}
             <div className="w-full">
               <ImageCarousel images={images} />
             </div>
 
-            {/* Address + Map + Coordinates */}
             <div className="w-full text-center">
               <div className="text-xs text-gray-600">
                 Captured In:{" "}
@@ -364,22 +419,29 @@ export default function PlantScanDetailsModal({
               ) : null}
             </div>
 
-            {/* Plant name */}
-            <div className="w-full text-center text-2xl font-extrabold text-emerald-700 italic">
+            <div
+              className={`w-full text-center text-2xl font-extrabold ${
+                notPlant ? "text-red-700 not-italic" : "text-emerald-700 italic"
+              }`}
+            >
               {mainName}
             </div>
 
-            {/* Confidence */}
             {confidenceMeta ? (
               <div
-                className="mx-auto inline-flex items-center gap-3 px-4 py-2 rounded-full"
-                style={{ backgroundColor: confidenceMeta.bg }}
+                className="mx-auto inline-flex items-center gap-3 px-4 py-2 rounded-full border"
+                style={{
+                  backgroundColor: confidenceMeta.bg,
+                  borderColor: confidenceMeta.border,
+                }}
               >
                 <span
                   className="text-xs font-bold"
                   style={{ color: confidenceMeta.color }}
                 >
-                  Confidence: {confidenceMeta.label}
+                  {notPlant
+                    ? "Plant Confidence"
+                    : `Confidence: ${confidenceMeta.label}`}
                 </span>
                 <span className="w-px h-4 bg-black/15" />
                 <span
@@ -391,21 +453,35 @@ export default function PlantScanDetailsModal({
               </div>
             ) : null}
 
-            {/* Common Names */}
-            <div className="w-full">
-              <BadgeList label="Common Names" items={commonNames} max={12} />
-            </div>
+            {notPlant ? (
+              <div className="w-full rounded-2xl border border-red-200 bg-red-50 p-4">
+                <div className="font-bold text-sm text-red-700 mb-2">
+                  Not a plant detected
+                </div>
+                <p className="text-sm text-red-700 leading-6 text-justify">
+                  This scanned image does not appear to be a plant. Try again
+                  with a clearer plant photo where the leaves, stem, bark, or
+                  whole plant are visible.
+                </p>
+              </div>
+            ) : null}
 
-            {/* Description */}
+            {!notPlant ? (
+              <div className="w-full">
+                <BadgeList label="Common Names" items={commonNames} max={12} />
+              </div>
+            ) : null}
+
             <div className="w-full rounded-2xl border border-gray-200 bg-white shadow-sm p-4">
-              <div className="font-bold text-sm mb-2">Description</div>
+              <div className="font-bold text-sm mb-2">
+                {notPlant ? "Result" : "Description"}
+              </div>
               <p className="text-sm text-gray-800 leading-6 text-justify">
                 {descriptionText}
               </p>
             </div>
 
-            {/* Taxonomy list (NOT dropdown) */}
-            {hasAnyTaxonomy ? (
+            {!notPlant && hasAnyTaxonomy ? (
               <div className="w-full rounded-2xl border border-gray-200 bg-white p-4">
                 <div className="text-sm font-semibold text-gray-900 text-center">
                   Taxonomy
@@ -422,7 +498,6 @@ export default function PlantScanDetailsModal({
               </div>
             ) : null}
 
-            {/* Info dropdowns */}
             <div className="w-full flex flex-col gap-3">
               <InfoDropdown title="Caption">
                 <p className="text-sm text-gray-800 leading-6 text-justify">
@@ -430,77 +505,82 @@ export default function PlantScanDetailsModal({
                 </p>
               </InfoDropdown>
 
-              <InfoDropdown title="Common Uses">
-                <p className="text-sm text-gray-800 leading-6 text-justify">
-                  {commonUsesText}
-                </p>
-              </InfoDropdown>
+              {!notPlant ? (
+                <>
+                  <InfoDropdown title="Common Uses">
+                    <p className="text-sm text-gray-800 leading-6 text-justify">
+                      {commonUsesText}
+                    </p>
+                  </InfoDropdown>
 
-              <InfoDropdown title="Toxicity">
-                <p className="text-sm text-gray-800 leading-6 text-justify">
-                  {top?.toxicity ?? "N/A"}
-                </p>
-              </InfoDropdown>
+                  <InfoDropdown title="Toxicity">
+                    <p className="text-sm text-gray-800 leading-6 text-justify">
+                      {top?.toxicity ?? "N/A"}
+                    </p>
+                  </InfoDropdown>
 
-              <InfoDropdown title="Best Watering">
-                <p className="text-sm text-gray-800 leading-6 text-justify">
-                  {top?.best_watering ?? "N/A"}
-                </p>
-              </InfoDropdown>
+                  <InfoDropdown title="Best Watering">
+                    <p className="text-sm text-gray-800 leading-6 text-justify">
+                      {top?.best_watering ?? "N/A"}
+                    </p>
+                  </InfoDropdown>
 
-              <InfoDropdown title="Best Soil Type">
-                <p className="text-sm text-gray-800 leading-6 text-justify">
-                  {top?.best_soil_type ?? "N/A"}
-                </p>
-              </InfoDropdown>
+                  <InfoDropdown title="Best Soil Type">
+                    <p className="text-sm text-gray-800 leading-6 text-justify">
+                      {top?.best_soil_type ?? "N/A"}
+                    </p>
+                  </InfoDropdown>
 
-              <InfoDropdown title="Best Light Condition">
-                <p className="text-sm text-gray-800 leading-6 text-justify">
-                  {top?.best_light_condition ?? "N/A"}
-                </p>
-              </InfoDropdown>
+                  <InfoDropdown title="Best Light Condition">
+                    <p className="text-sm text-gray-800 leading-6 text-justify">
+                      {top?.best_light_condition ?? "N/A"}
+                    </p>
+                  </InfoDropdown>
 
-              <InfoDropdown title="Cultural Significance">
-                <p className="text-sm text-gray-800 leading-6 text-justify">
-                  {culturalSignificance}
-                </p>
-              </InfoDropdown>
+                  <InfoDropdown title="Cultural Significance">
+                    <p className="text-sm text-gray-800 leading-6 text-justify">
+                      {culturalSignificance}
+                    </p>
+                  </InfoDropdown>
 
-              {top?.url ? (
-                <InfoDropdown title="Reference Link (Wikipedia)">
-                  <a
-                    href={top.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-sky-600 hover:underline"
-                  >
-                    Open link
-                  </a>
-                </InfoDropdown>
+                  {top?.url ? (
+                    <InfoDropdown title="Reference Link (Wikipedia)">
+                      <a
+                        href={top.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sky-600 hover:underline"
+                      >
+                        Open link
+                      </a>
+                    </InfoDropdown>
+                  ) : null}
+                </>
               ) : null}
             </div>
 
-            {/* ✅ Similar Images (uses SimilarImagesCarousel) */}
-            <div className="w-full">
-              {similarItems.length ? (
-                <SimilarImagesCarousel
-                  items={similarItems}
-                  title="Similar Images"
-                />
-              ) : (
-                <>
-                  <div className="font-bold text-sm mb-2">Similar Images</div>
-                  <div className="text-sm text-gray-500">N/A</div>
-                </>
-              )}
-            </div>
+            {!notPlant ? (
+              <div className="w-full">
+                {similarItems.length ? (
+                  <SimilarImagesCarousel
+                    items={similarItems}
+                    title="Similar Images"
+                  />
+                ) : (
+                  <>
+                    <div className="font-bold text-sm mb-2">Similar Images</div>
+                    <div className="text-sm text-gray-500">N/A</div>
+                  </>
+                )}
+              </div>
+            ) : null}
 
-            {/* Synonyms */}
-            <div className="w-full">
-              <BadgeList label="Synonyms" items={synonyms} max={18} />
-            </div>
+            {!notPlant ? (
+              <div className="w-full">
+                <BadgeList label="Synonyms" items={synonyms} max={18} />
+              </div>
+            ) : null}
 
-            {/* Footer pills */}
             <div className="w-full mt-2 text-center text-xs text-gray-500">
               <div className="flex flex-wrap gap-2 justify-center">
                 <Pill>
