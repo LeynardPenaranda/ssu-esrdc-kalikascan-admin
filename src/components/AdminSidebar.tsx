@@ -54,6 +54,12 @@ const NAV: NavItem[] = [
     match: "prefix",
   },
   {
+    label: "Map Posts View",
+    href: "/admin/map-post",
+    icon: MapPinned,
+    match: "prefix",
+  },
+  {
     label: "Health Assessments Report",
     href: "/admin/health-assessments-report",
     icon: Stethoscope,
